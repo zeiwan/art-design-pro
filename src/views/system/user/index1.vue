@@ -5,15 +5,15 @@
       <ArtSearchBar
         v-model:filter="formFilters"
         :items="formItems"
-        @reset="resetParams"
-        @search="resetPage"
+        @reset="handleReset"
+        @search="handleSearch"
       ></ArtSearchBar>
 
       <ElCard shadow="never" class="art-table-card">
         <!-- 表格头部 -->
-        <ArtTableHeader v-model:columns="columnChecks" @refresh="refresh">
+        <ArtTableHeader v-model:columns="columnChecks" @refresh="handleRefresh">
           <template #left>
-            <ElButton @click="handleAdd('add', undefined)">新增用户</ElButton>
+            <ElButton @click="showDialog('add')">新增用户edit.vue</ElButton>
           </template>
         </ArtTableHeader>
 
@@ -21,56 +21,107 @@
         <ArtTable
           ref="tableRef"
           row-key="id"
-          :loading="pager.loading"
-          :data="pager.lists"
-          :total="pager.count"
+          :loading="loading"
+          :data="tableData"
+          :currentPage="pagination.currentPage"
+          :pageSize="pagination.pageSize"
+          :total="pagination.total"
           :marginTop="10"
           @selection-change="handleSelectionChange"
+          @size-change="handleSizeChange"
+          @current-change="handleCurrentChange"
         >
           <template #default>
             <ElTableColumn v-for="col in columns" :key="col.prop || col.type" v-bind="col" />
           </template>
-          <template #pagination>
-            <pagination v-model="pager" @change="getLists" />
-          </template>
         </ArtTable>
+
+        <ElDialog
+          v-model="dialogVisible"
+          :title="dialogType === 'add' ? '添加用户' : '编辑用户'"
+          width="30%"
+          align-center
+        >
+          <ElForm ref="formRef" :model="formData" :rules="rules" label-width="80px">
+            <ElFormItem label="用户名" prop="username">
+              <ElInput v-model="formData.username" />
+            </ElFormItem>
+            <ElFormItem label="手机号" prop="phone">
+              <ElInput v-model="formData.phone" />
+            </ElFormItem>
+            <ElFormItem label="性别" prop="gender">
+              <ElSelect v-model="formData.gender">
+                <ElOption label="男" value="男" />
+                <ElOption label="女" value="女" />
+              </ElSelect>
+            </ElFormItem>
+            <ElFormItem label="角色" prop="role">
+              <ElSelect v-model="formData.role" multiple>
+                <ElOption
+                  v-for="role in roleList"
+                  :key="role.roleCode"
+                  :value="role.roleCode"
+                  :label="role.roleName"
+                />
+              </ElSelect>
+            </ElFormItem>
+          </ElForm>
+          <template #footer>
+            <div class="dialog-footer">
+              <ElButton @click="dialogVisible = false">取消</ElButton>
+              <ElButton type="primary" @click="handleSubmit">提交</ElButton>
+            </div>
+          </template>
+        </ElDialog>
       </ElCard>
     </div>
-    <EditPopup
-      ref="editRef"
-      @success="getLists"
-      @close="showEdit = false"
-      v-if="showEdit"
-    ></EditPopup>
   </ArtTableFullScreen>
 </template>
 
 <script setup lang="ts">
   import { h } from 'vue'
-  import { ACCOUNT_TABLE_DATA } from '@/mock/temp/formData'
+  import { ROLE_LIST_DATA, ACCOUNT_TABLE_DATA } from '@/mock/temp/formData'
 
-  import { ElTag } from 'element-plus'
+  import { ElDialog, FormInstance, ElTag } from 'element-plus'
   import { ElMessageBox, ElMessage } from 'element-plus'
+  import type { FormRules } from 'element-plus'
   import { useCheckedColumns } from '@/composables/useCheckedColumns'
   import ArtButtonTable from '@/components/core/forms/ArtButtonTable.vue'
   import { UserService } from '@/api/usersApi'
   import { SearchChangeParams, SearchFormItem } from '@/types'
-  import { usePaging } from '@/hooks'
-  import EditPopup from './edit.vue'
-  import { initialSearchState } from '@/views/system/user/common'
+  const { width } = useWindowSize()
 
   defineOptions({ name: 'User' }) // 定义组件名称，用于 KeepAlive 缓存控制
 
-  const editRef = shallowRef<InstanceType<typeof EditPopup>>()
-  const { width } = useWindowSize()
-  const showEdit = ref(false)
+  const dialogType = ref('add')
+  const dialogVisible = ref(false)
+  const loading = ref(false)
+
+  // 定义表单搜索初始值
+  const initialSearchState = {
+    name: '',
+    phone: '',
+    address: '',
+    level: '',
+    email: '',
+    date: '',
+    daterange: '',
+    status: '1'
+  }
+
+  const roleList = ref<any[]>([])
 
   // 响应式表单数据
   const formFilters = reactive({ ...initialSearchState })
-  const { pager, getLists, resetParams, resetPage, refresh } = usePaging({
-    fetchFun: UserService.getUserList,
-    params: formFilters
+
+  const pagination = reactive({
+    currentPage: 1,
+    pageSize: 20,
+    total: 0
   })
+
+  // 表格数据
+  const tableData = ref<any[]>([])
 
   // 表格实例引用
   const tableRef = ref()
@@ -78,25 +129,30 @@
   // 选中的行数据
   const selectedRows = ref<any[]>([])
 
+  // 重置表单
+  const handleReset = () => {
+    Object.assign(formFilters, { ...initialSearchState })
+    pagination.currentPage = 1 // 重置到第一页
+    getUserList()
+  }
+
+  // 搜索处理
+  const handleSearch = () => {
+    console.log('搜索参数:', formFilters)
+    pagination.currentPage = 1 // 搜索时重置到第一页
+    getUserList()
+  }
+
   // 表单项变更处理
   const handleFormChange = (params: SearchChangeParams): void => {
     console.log('表单项变更:', params)
-    if (params.prop === 'daterange') {
-      // 断言 params.val 为 any[] 类型
-      const dateRange = params.val as any[]
-
-      if (dateRange && dateRange.length >= 2) {
-        formFilters.create_time_start = dateRange[0]
-        formFilters.create_time_end = dateRange[1]
-      }
-    }
   }
 
   // 表单配置项
   const formItems: SearchFormItem[] = [
     {
       label: '用户名',
-      prop: 'userName',
+      prop: 'name',
       type: 'input',
       config: {
         clearable: true
@@ -106,7 +162,7 @@
 
     {
       label: '电话',
-      prop: 'userPhone',
+      prop: 'phone',
       type: 'input',
       config: {
         clearable: true
@@ -165,8 +221,7 @@
         type: 'daterange',
         startPlaceholder: '开始时间',
         endPlaceholder: '结束时间'
-      },
-      onChange: handleFormChange
+      }
     },
     {
       label: '状态',
@@ -213,18 +268,33 @@
   }
 
   // 显示对话框
-  const handleAdd = async (type: string, row: any) => {
-    showEdit.value = true
-    await nextTick()
-    editRef.value?.open(type)
-    if (editRef.value) {
-      editRef.value.setFormData(row)
+  const showDialog = (type: string, row?: any) => {
+    dialogVisible.value = true
+    dialogType.value = type
+
+    // 重置表单验证状态
+    if (formRef.value) {
+      formRef.value.resetFields()
+    }
+
+    if (type === 'edit' && row) {
+      formData.username = row.username
+      formData.phone = row.userPhone
+      formData.gender = row.gender === 1 ? '男' : '女'
+
+      // 将用户角色代码数组直接赋值给formData.role
+      formData.role = Array.isArray(row.userRoles) ? row.userRoles : []
+    } else {
+      formData.username = ''
+      formData.phone = ''
+      formData.gender = '男'
+      formData.role = []
     }
   }
 
   // 删除用户
-  const deleteUser = (row: any) => {
-    ElMessageBox.confirm(`确定要注销该 ${row.userName} 用户吗？`, '注销用户', {
+  const deleteUser = () => {
+    ElMessageBox.confirm('确定要注销该用户吗？', '注销用户', {
       confirmButtonText: '确定',
       cancelButtonText: '取消',
       type: 'error'
@@ -281,34 +351,108 @@
         return h('div', [
           h(ArtButtonTable, {
             type: 'edit',
-            onClick: () => handleAdd('edit', row)
+            onClick: () => showDialog('edit', row)
           }),
           h(ArtButtonTable, {
             type: 'delete',
-            onClick: () => deleteUser(row)
+            onClick: () => deleteUser()
           })
         ])
       }
     }
   ])
 
+  // 表单实例
+  const formRef = ref<FormInstance>()
+
+  // 表单数据
+  const formData = reactive({
+    username: '',
+    phone: '',
+    gender: '',
+    role: [] as string[]
+  })
+
+  onMounted(() => {
+    getUserList()
+    getRoleList()
+  })
+
+  // 获取用户列表数据
+  const getUserList = async () => {
+    loading.value = true
+    try {
+      const { currentPage, pageSize } = pagination
+
+      const { records, current, size, total } = await UserService.getUserList({
+        current: currentPage,
+        size: pageSize
+      })
+
+      // 使用本地头像替换接口返回的头像
+      tableData.value = records.map((item: any, index: number) => ({
+        ...item,
+        avatar: ACCOUNT_TABLE_DATA[index % ACCOUNT_TABLE_DATA.length].avatar
+      }))
+
+      // 更新分页信息
+      Object.assign(pagination, { currentPage: current, pageSize: size, total })
+    } catch (error) {
+      console.error('获取用户列表失败:', error)
+    } finally {
+      loading.value = false
+    }
+  }
+
+  const getRoleList = () => {
+    roleList.value = ROLE_LIST_DATA
+  }
+
+  const handleRefresh = () => {
+    getUserList()
+  }
+
   // 处理表格行选择变化
   const handleSelectionChange = (selection: any[]) => {
     selectedRows.value = selection
   }
 
-  onMounted(() => {
-    getLists()
+  // 表单验证规则
+  const rules = reactive<FormRules>({
+    username: [
+      { required: true, message: '请输入用户名', trigger: 'blur' },
+      { min: 2, max: 20, message: '长度在 2 到 20 个字符', trigger: 'blur' }
+    ],
+    phone: [
+      { required: true, message: '请输入手机号', trigger: 'blur' },
+      { pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号格式', trigger: 'blur' }
+    ],
+    gender: [{ required: true, message: '请选择性别', trigger: 'change' }],
+    role: [{ required: true, message: '请选择角色', trigger: 'change' }]
   })
-  //  监听列表数据变化，动态设置头像图片路径
-  watchSyncEffect(() => {
-    if (pager.lists.length > 0) {
-      pager.lists = pager.lists.map((item: any, index: number) => ({
-        ...item,
-        avatar: ACCOUNT_TABLE_DATA[index % ACCOUNT_TABLE_DATA.length].avatar
-      }))
-    }
-  })
+
+  // 提交表单
+  const handleSubmit = async () => {
+    if (!formRef.value) return
+
+    await formRef.value.validate((valid) => {
+      if (valid) {
+        ElMessage.success(dialogType.value === 'add' ? '添加成功' : '更新成功')
+        dialogVisible.value = false
+      }
+    })
+  }
+
+  // 处理表格分页变化
+  const handleSizeChange = (newPageSize: number) => {
+    pagination.pageSize = newPageSize
+    getUserList()
+  }
+
+  const handleCurrentChange = (newCurrentPage: number) => {
+    pagination.currentPage = newCurrentPage
+    getUserList()
+  }
 </script>
 
 <style lang="scss" scoped>

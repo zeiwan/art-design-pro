@@ -9,7 +9,7 @@
     }"
   >
     <div class="table-container">
-      <el-table
+      <ElTable
         ref="tableRef"
         v-loading="loading"
         :data="tableData"
@@ -29,7 +29,7 @@
         @selection-change="handleSelectionChange"
       >
         <!-- 序号列 -->
-        <el-table-column
+        <ElTableColumn
           v-if="index && tableData.length > 0"
           type="index"
           width="60"
@@ -45,36 +45,16 @@
         <template #empty>
           <el-empty :description="emptyText" v-show="!loading" />
         </template>
-      </el-table>
+      </ElTable>
     </div>
-
-    <!-- 分页 -->
-    <div
-      v-if="pagination && tableData.length > 0"
-      class="table-pagination"
-      :class="paginationAlign"
-    >
-      <el-pagination
-        v-model:current-page="currentPage"
-        v-model:page-size="pageSize"
-        :page-sizes="pageSizes"
-        :pager-count="isMobile ? 5 : 7"
-        :total="total"
-        :background="true"
-        :size="paginationSize"
-        :layout="paginationLayoutComputed"
-        @size-change="handleSizeChange"
-        @current-change="handleCurrentChange"
-        :hide-on-single-page="hideOnSinglePage"
-      />
+    <div class="table-pagination" :class="paginationAlign">
+      <slot name="pagination"></slot>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
   import { useTableStore } from '@/store/modules/table'
-  const { width } = useWindowSize()
-  const isMobile = computed(() => width.value < 500)
 
   interface TableProps {
     /** 表格数据源 */
@@ -147,19 +127,6 @@
     paginationLayout: '',
     showHeaderBackground: null,
     marginTop: 20
-  })
-
-  /*
-   * 计算分页布局
-   * 移动端跟pc端使用两种不同的布局
-   */
-  const paginationLayoutComputed = computed(() => {
-    if (props.paginationLayout) {
-      return props.paginationLayout
-    }
-    return isMobile.value
-      ? 'prev, pager, next, jumper, sizes, total'
-      : 'total, sizes, prev, pager, next, jumper'
   })
 
   const emit = defineEmits([
@@ -249,18 +216,6 @@
     return props.data.slice(start, end)
   })
 
-  // 当前页
-  const currentPage = computed({
-    get: () => props.currentPage,
-    set: (val) => emit('update:currentPage', val)
-  })
-
-  // 每页条数
-  const pageSize = computed({
-    get: () => props.pageSize,
-    set: (val) => emit('update:pageSize', val)
-  })
-
   // 行点击事件
   const handleRowClick = (row: any, column: any, event: any) => {
     emit('row-click', row, column, event)
@@ -269,27 +224,6 @@
   // 选择变化事件
   const handleSelectionChange = (selection: any) => {
     emit('selection-change', selection)
-  }
-
-  // 每页条数改变
-  const handleSizeChange = (val: number) => {
-    emit('size-change', val)
-  }
-
-  // 当前页改变
-  const handleCurrentChange = (val: number) => {
-    emit('current-change', val)
-
-    scrollToTop()
-  }
-
-  // 表格滚动到顶部
-  const scrollToTop = () => {
-    nextTick(() => {
-      if (tableRef.value) {
-        tableRef.value.setScrollTop(0)
-      }
-    })
   }
 </script>
 
